@@ -1,0 +1,19 @@
+/* Based on https://github.com/tsconfig/bases/blob/501da2bcd640cf95c95805783e1012b992338f28/bases/node22.json */
+{
+  "compilerOptions": {
+    "lib": ["es2023"],
+    "module": "node16",
+    "target": "es2022",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node16",
+    "outDir": "dist",
+    // CHANGED: this folder is plain JS (server.js), not TS — without
+    // allowJs, TS's default include (**/*) only matches .ts files, finds
+    // none, and VS Code shows "No inputs were found in config file".
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["**/*.js"]
+}
