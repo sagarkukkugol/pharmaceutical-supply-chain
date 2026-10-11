@@ -655,14 +655,20 @@ function SignInForm({ onLoggedIn, onAdminLoggedIn, onConnectStepChange, onForgot
       // registered role too; the check here just gives a quick message.
       const data = await login({ username: username.trim(), password, role });
       if (data.role !== role) {
-        setMessage({ type: "error", text: `This account is registered as ${data.role}, not ${role}.` });
+        setMessage({ type: "error", text: `This account is not registered as ${role}.` });
         return;
       }
       // Password + role checked out — now show the explicit MetaMask
       // connect step rather than jumping straight into extension popups.
       setPendingLogin({ ...data, password });
     } catch (err) {
-      setMessage({ type: "error", text: err.message });
+      // setMessage({ type: "error", text: err.message });
+      const errorText = err.message || "Login failed.";
+      const message = errorText.includes("registered as")
+        ? `This account is not registered as ${role}.`
+        : errorText;
+
+      setMessage({ type: "error", text: message });
     } finally {
       setLoading(false);
     }

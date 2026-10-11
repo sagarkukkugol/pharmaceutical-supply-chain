@@ -26,3 +26,11 @@ Auto-generated log of every account created through Sign Up. Open this file in V
 | HealthPlus | Pharmacy | 11 Oct 2026, 13:39 |
 | cipla | Manufacturer | 11 Oct 2026, 14:18 |
 | cipla1 | Manufacturer | 11 Oct 2026, 15:18 |
+| ecart | Transporter | 11 Oct 2026, 18:10 |
+| shadowfox | Transporter | 11 Oct 2026, 18:13 |
+| iranna | Distributor | 11 Oct 2026, 18:18 |
+| vinayak | Distributor | 11 Oct 2026, 18:23 |
+| prasad | Pharmacy | 11 Oct 2026, 19:32 |
+| rajat | Pharmacy | 11 Oct 2026, 19:34 |
+| sunpharma | Manufacturer | 11 Oct 2026, 19:36 |
+| lupin | Manufacturer | 11 Oct 2026, 20:11 |

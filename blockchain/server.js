@@ -425,7 +425,7 @@ app.post("/login", (req, res) => {
     const { role: requestedRole } = req.body;
     if (requestedRole && requestedRole !== user.role) {
       return res.status(403).json({
-        error: `This account is registered as ${user.role}, not ${requestedRole}.`,
+        error: `This account is not registered as ${requestedRole}.`,
       });
     }
 
