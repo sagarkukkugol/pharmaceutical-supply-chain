@@ -254,7 +254,7 @@ const STORY = [
   { role: "Transporter", kind: "truck", src: homepageImages.transporter, text: "Receives the batch and records its movement through the supply chain, ensuring traceability throughout transportation." },
   { role: "Distributor", kind: "boxes", src: homepageImages.distributor, text: "Receives the pharmaceutical batch and securely records the ownership transfer on the blockchain." },
   { role: "Pharmacy", kind: "pharmacy", src: homepageImages.pharmacy, text: "Verifies the batch authenticity, receives ownership, and makes the verified medicine available to customers." },
-  { role: "Consumer", kind: "phone", src: homepageImages.consumer, text: "Scans the QR code or enters the batch code to verify authenticity, check expiry, and view the complete batch history." },
+  { role: "Consumer", kind: "phone", src: homepageImages.consumer, text: "Scans the QR code or enters the batch code to verify authenticity, check expiry and view the complete batch history." },
 ];
 
 export default function HomePage({ onPartnerLogin, onVerifyCode }) {
@@ -443,7 +443,7 @@ export default function HomePage({ onPartnerLogin, onVerifyCode }) {
           <div style={{ flex: "1 1 42%" }}>
             <h2 style={{ margin: "0 0 12px", fontSize: "32px", fontWeight: 800, color: INK }}>Partner Login</h2>
             <p style={{ margin: "0 0 22px", fontSize: "17px", lineHeight: 1.55, color: MUTED, maxWidth: "460px" }}>
-              For authorized manufacturers, transporters, distributors, pharmacies, and other supply-chain partners to securely manage pharmaceutical batches.
+              For authorized manufacturers, transporters, distributors, pharmacies and other supply-chain partners to securely manage pharmaceutical batches.
             </p>
             <button type="button" style={ctaStyle} onClick={onPartnerLogin}>
               Login

@@ -74,7 +74,7 @@ export function NotificationBell({ items, unreadIds, onOpenItem, onMarkAllRead }
                       {isUnread && <span className="sc-unread-dot" aria-label="Unread" />}
                     </span>
                     <span className="sc-notif-meta" style={{ display: "block" }}>
-                      {n.displayId} · {n.productName} · {n.batchCode}
+                      {n.displayId} · {n.productName} · {n.productCode ?? n.batchCode}
                     </span>
                     {n.detail && <span className="sc-notif-meta" style={{ display: "block" }}>{n.detail}</span>}
                     <span className="sc-notif-time" style={{ display: "block" }}>{timeAgo(n.ts)}</span>

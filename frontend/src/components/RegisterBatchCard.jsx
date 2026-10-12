@@ -1,18 +1,20 @@
-import { useState } from "react";
-import { getMetaMaskContract } from "../contract";
-import { setTemperatureRange } from "../api";
+import { useEffect, useState } from "react";
+import { getMetaMaskContract, getReadOnlyContract } from "../contract";
+import { setTemperatureRange, saveBatchMeta } from "../api";
 import ConfirmAndSign from "./ConfirmAndSign";
 import TermsModal from "./TermsModal";
 import QRCodeBox from "./QRCodeBox";
 import MessageBox from "./MessageBox";
-import { dateStringToUnix, describeError, makeBatchId } from "../utils";
+import { dateStringToUnix, describeError, batchIdPrefix } from "../utils";
+import { nextFreeBatchId } from "../resolveBatch";
 import { cardStyle, labelStyle, inputStyle, readonlyBoxStyle, buttonStyle } from "../styles";
 
 // Register Batch form — logic unchanged from the original App.jsx; only
 // moved into its own file so the new dashboard shell can render it.
 export default function RegisterBatchCard({ session, onDone }) {
   const [productName, setProductName] = useState("");
-  const [batchCode, setBatchCode] = useState("");
+  // Product Code: identifies the product and MAY repeat across batches.
+  const [productCode, setProductCode] = useState("");
   const [quantity, setQuantity] = useState("");
   const [manufactureDate, setManufactureDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
@@ -30,14 +32,41 @@ export default function RegisterBatchCard({ session, onDone }) {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
-  // Generated Batch ID preview — same rule as everywhere else in the app
-  // (manufacturer + product code + registration date), using today's date.
-  const previewBatchId =
-    batchCode.trim() && session.username ? makeBatchId(session.username, batchCode.trim()) : "";
+  // Batch ID (auto-generated, never typed): MMM-PP-DDMMYYYY-XX. It is the
+  // unique identifier of THIS batch; the next free running number XX is
+  // looked up on the blockchain, so two batches never share a Batch ID.
+  const [previewBatchId, setPreviewBatchId] = useState("");
+  const [finalBatchId, setFinalBatchId] = useState("");
+  const idPrefix = batchIdPrefix(session.username, productCode.trim(), manufactureDate);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!idPrefix) {
+      Promise.resolve().then(() => !cancelled && setPreviewBatchId(""));
+      return () => {
+        cancelled = true;
+      };
+    }
+    const t = setTimeout(async () => {
+      try {
+        const next = await nextFreeBatchId(getReadOnlyContract(), idPrefix);
+        if (!cancelled) setPreviewBatchId(next);
+      } catch {
+        if (!cancelled) setPreviewBatchId("");
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [idPrefix, registeredCode]);
 
   const validate = () => {
-    if (!productName.trim() || !batchCode.trim() || !quantity || !manufactureDate || !expiryDate) {
+    if (!productName.trim() || !productCode.trim() || !quantity || !manufactureDate || !expiryDate) {
       return "Please fill in every field, including manufacture and expiry dates.";
+    }
+    if (!idPrefix) {
+      return "Product Code and Manufacture Date are needed to generate the Batch ID (the Product Code must contain letters or numbers).";
     }
     if (Number(quantity) <= 0) {
       return "Quantity must be greater than zero.";
@@ -54,7 +83,7 @@ export default function RegisterBatchCard({ session, onDone }) {
     return null;
   };
 
-  const openConfirm = () => {
+  const openConfirm = async () => {
     if (!termsAccepted) return;
     setMessage({ type: "", text: "" });
     const validationError = validate();
@@ -62,19 +91,30 @@ export default function RegisterBatchCard({ session, onDone }) {
       setMessage({ type: "error", text: validationError });
       return;
     }
+    // Re-check the blockchain right now so the Batch ID shown in the review
+    // step is the first one that is really free.
+    try {
+      setFinalBatchId(await nextFreeBatchId(getReadOnlyContract(), idPrefix));
+    } catch (err) {
+      setMessage({ type: "error", text: describeError(err) });
+      return;
+    }
     setConfirming(true);
   };
 
   const actuallyRegister = async () => {
     setConfirming(false);
-    const newBatchId = makeBatchId(session.username, batchCode.trim());
+    const newBatchId = finalBatchId;
     try {
       setLoading(true);
+      // Save the Product Code for this Batch ID first, so a registered batch
+      // can never end up without its Product Code (e.g. backend not running).
+      await saveBatchMeta(newBatchId, productCode.trim(), session.username);
       const contract = await getMetaMaskContract(session.walletAddress);
       setMessage({ type: "pending", text: "Sending transaction..." });
       const tx = await contract.registerBatch(
         productName.trim(),
-        batchCode.trim(),
+        newBatchId, // on-chain unique `batchCode` field = the Batch ID
         quantity,
         dateStringToUnix(manufactureDate),
         dateStringToUnix(expiryDate)
@@ -87,18 +127,18 @@ export default function RegisterBatchCard({ session, onDone }) {
       // registration. It's just appended to the success message.
       let tempWarning = "";
       try {
-        await setTemperatureRange(batchCode.trim(), Number(tempMin), Number(tempMax));
+        await setTemperatureRange(newBatchId, Number(tempMin), Number(tempMax));
       } catch {
-        tempWarning = " (Note: the temperature range could not be saved - you can ignore this if you don't need it.)";
+        tempWarning = " (Note: the temperature range could not be saved — you can ignore this if you don't need it.)";
       }
 
       setMessage({
         type: "success",
-        text: `Batch "${newBatchId}" (product code ${batchCode.trim()}) registered successfully!${tempWarning}`,
+        text: `Batch ID "${newBatchId}" (Product Code ${productCode.trim()}) registered successfully!${tempWarning}`,
       });
-      setRegisteredCode(batchCode.trim());
+      setRegisteredCode(newBatchId);
       setProductName("");
-      setBatchCode("");
+      setProductCode("");
       setQuantity("");
       setManufactureDate("");
       setExpiryDate("");
@@ -122,10 +162,14 @@ export default function RegisterBatchCard({ session, onDone }) {
       <input type="text" placeholder="e.g. Paracetamol" value={productName} onChange={(e) => setProductName(e.target.value)} style={inputStyle} />
 
       <label style={labelStyle}>Product Code</label>
-      <input type="text" placeholder="e.g. dolo_450" value={batchCode} onChange={(e) => setBatchCode(e.target.value)} style={inputStyle} />
+      <input type="text" placeholder="e.g. dolo_450" value={productCode} onChange={(e) => setProductCode(e.target.value)} style={inputStyle} />
 
-      <label style={labelStyle}>Batch ID (auto-generated)</label>
-      <div style={readonlyBoxStyle}>{previewBatchId || "auto-generated"}</div>
+      <label style={labelStyle}>Batch ID (Auto-generated)</label>
+      <div style={readonlyBoxStyle}>{previewBatchId || "Auto-Generated"}</div>
+      {/* <p style={{ fontSize: "12px", color: "#64748b", marginTop: "-8px", marginBottom: "12px" }}>
+        Format MMM-PP-DDMMYYYY-XX: first 3 letters of the manufacturer, first 2 letters of the Product Code,
+        manufacture date and a running number. The Product Code can repeat across batches; the Batch ID never does.
+      </p> */}
 
       <label style={labelStyle}>Quantity</label>
       <input type="number" placeholder="e.g. 100" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={inputStyle} />
@@ -155,11 +199,15 @@ export default function RegisterBatchCard({ session, onDone }) {
           style={{ ...inputStyle, marginBottom: 0 }}
         />
       </div>
+      <p style={{ fontSize: "12px", color: "#64748b", marginTop: 0, marginBottom: "12px" }}>
+        Every transporter, distributor, and pharmacy that handles this batch will log the temperature
+        they observe against this range.
+      </p>
 
       <label style={labelStyle}>Manufacturer</label>
       <div style={readonlyBoxStyle}>{session.username} - {session.role}</div>
       <p style={{ fontSize: "12px", color: "#64748b", marginTop: "-8px", marginBottom: "12px" }}>
-        The manufacturer is always your signed-in account - it cannot be typed manually.
+        The manufacturer is always your signed-in account — it cannot be typed manually.
       </p>
 
       <label className="sc-terms-inline">
@@ -187,7 +235,7 @@ export default function RegisterBatchCard({ session, onDone }) {
       {registeredCode && (
         <div style={{ marginTop: "16px", padding: "16px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
           <p style={{ marginTop: 0, marginBottom: "12px", color: "#64748b", fontSize: "13px" }}>
-            QR code for <strong style={{ color: "#334155" }}>{registeredCode}</strong>
+            QR code for Batch ID <strong style={{ color: "#334155" }}>{registeredCode}</strong>
           </p>
           <QRCodeBox batchCode={registeredCode} />
         </div>
@@ -209,9 +257,9 @@ export default function RegisterBatchCard({ session, onDone }) {
             <>
               <strong>Register Batch</strong>
               <br />
-              {productName.trim()} — {batchCode.trim()} (qty {quantity})
+              {productName.trim()} — Product Code {productCode.trim()} (qty {quantity})
               <br />
-              Batch ID: {previewBatchId}
+              Batch ID: {finalBatchId}
               <br />
               Manufacture: {manufactureDate} · Expiry: {expiryDate}
               <br />

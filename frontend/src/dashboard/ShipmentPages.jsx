@@ -64,7 +64,7 @@ export function ActiveShipmentsPage({ session, rows, allBatches, loading, error,
               <StatusBadge status={r.status} tone={r.statusTone} />
             </div>
             <dl className="sc-ship-grid" style={{ margin: 0 }}>
-              <div><dt>Product Code</dt><dd>{r.batchCode}</dd></div>
+              <div><dt>Product Code</dt><dd>{r.productCode ?? r.batchCode}</dd></div>
               <div><dt>Quantity</dt><dd>{r.quantity.toLocaleString()}</dd></div>
               <div><dt>Pickup Location</dt><dd>{r.pickupLocation}</dd></div>
               <div><dt>Delivery Location</dt><dd>{r.deliveryLocation}</dd></div>

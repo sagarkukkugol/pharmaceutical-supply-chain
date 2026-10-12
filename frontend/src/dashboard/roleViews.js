@@ -178,8 +178,13 @@ export function buildNotifications({ role, wallet, batches, events, local, userO
   const out = [];
   const listPage = role === "Manufacturer" ? "registered" : role === "Transporter" ? "shipments" : "received";
 
-  const push = (n) => out.push({ ...n, batchCode: n.batch.batchCode, productName: n.batch.productName, displayId: n.batch.displayId });
+  const push = (n) => out.push({ ...n, batchCode: n.batch.batchCode, productCode: n.batch.productCode, productName: n.batch.productName, displayId: n.batch.displayId });
   const nameOf = (a) => userOf(a)?.username || "another participant";
+  // Expired batch rejected by a pharmacy (Not Delivered + written comment).
+  const expiredNote = (b, e) =>
+    e.type === "DeliveryStatusUpdated" && e.status !== 1 && b.expiryReport
+      ? { icon: "alert", title: "Expired Batch Reported", detail: `${b.expiryReport.reportedBy}: "${b.expiryReport.comment}"` }
+      : null;
 
   for (const e of events) {
     const b = byId.get(e.batchId);
@@ -192,6 +197,7 @@ export function buildNotifications({ role, wallet, batches, events, local, userO
         push({ ...base, icon: "transfer", title: "Ownership Transferred", detail: `To ${nameOf(e.to)}` });
       else if (e.type === "OwnershipTransferred")
         push({ ...base, icon: "package", title: "New Batch Activity", detail: `Now with ${nameOf(e.to)}` });
+      else if (e.type === "DeliveryStatusUpdated" && expiredNote(b, e)) push({ ...base, ...expiredNote(b, e) });
       else if (e.type === "DeliveryStatusUpdated")
         push({
           ...base,
@@ -206,11 +212,15 @@ export function buildNotifications({ role, wallet, batches, events, local, userO
         push({ ...base, icon: "package", title: "Batch Assigned", detail: `From ${nameOf(e.from)}` });
       else if (e.type === "OwnershipTransferred" && eq(e.from, wallet))
         push({ ...base, icon: "truck", title: "Batch Delivered", detail: `To ${nameOf(e.to)}`, nav: "shipment-history" });
+      else if (e.type === "DeliveryStatusUpdated" && expiredNote(b, e) && b.transfers.some((t) => eq(t.from, wallet)))
+        push({ ...base, ...expiredNote(b, e), nav: "shipment-history" });
     } else if (role === "Distributor") {
       if (e.type === "OwnershipTransferred" && eq(e.to, wallet))
         push({ ...base, icon: "package", title: "Batch Received", detail: `From ${nameOf(e.from)}` });
       else if (e.type === "OwnershipTransferred" && eq(e.from, wallet))
         push({ ...base, icon: "send", title: "Batch Dispatched", detail: `To ${nameOf(e.to)}` });
+      else if (e.type === "DeliveryStatusUpdated" && expiredNote(b, e) && b.transfers.some((t) => eq(t.from, wallet)))
+        push({ ...base, ...expiredNote(b, e) });
       else if (e.type === "DeliveryStatusUpdated" && b.transfers.some((t) => eq(t.from, wallet)))
         push({
           ...base,
@@ -221,6 +231,8 @@ export function buildNotifications({ role, wallet, batches, events, local, userO
     } else if (role === "Pharmacy") {
       if (e.type === "OwnershipTransferred" && eq(e.to, wallet))
         push({ ...base, icon: "package", title: "Batch Received", detail: `From ${nameOf(e.from)}` });
+      else if (e.type === "DeliveryStatusUpdated" && eq(e.to, wallet) && expiredNote(b, e))
+        push({ ...base, ...expiredNote(b, e), title: "Expired Batch Rejected", detail: `Your comment: "${b.expiryReport.comment}"` });
       else if (e.type === "DeliveryStatusUpdated" && eq(e.to, wallet))
         push({
           ...base,

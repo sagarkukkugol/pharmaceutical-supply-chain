@@ -9,7 +9,7 @@ import { formatDateOnly } from "../utils";
 export function matchesQuery(row, q) {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const hay = [row.displayId, row.id, row.batchCode, row.productName, row.manufacturerName]
+  const hay = [row.displayId, row.id, row.batchCode, row.productCode, row.productName, row.manufacturerName]
     .filter((x) => x !== undefined && x !== null)
     .map((x) => String(x).toLowerCase());
   if (hay.some((h) => h.includes(needle))) return true;
@@ -48,7 +48,7 @@ export function usePaged(rows, pageSize) {
 const date = (v) => formatDateOnly(v);
 export const COL = {
   batchId: { key: "batchId", label: "Batch ID", className: "sc-cell-strong", render: (r) => r.displayId },
-  productCode: { key: "code", label: "Product Code", className: "sc-cell-nowrap", render: (r) => r.batchCode },
+  productCode: { key: "code", label: "Product Code", className: "sc-cell-nowrap", render: (r) => r.productCode ?? r.batchCode },
   productName: { key: "name", label: "Product Name", render: (r) => r.productName },
   quantity: { key: "qty", label: "Quantity", className: "sc-cell-nowrap", render: (r) => r.quantity.toLocaleString() },
   availableQty: { key: "avail", label: "Available Quantity", className: "sc-cell-nowrap", render: (r) => (r.availableQty ?? 0).toLocaleString() },

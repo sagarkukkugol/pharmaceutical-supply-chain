@@ -125,3 +125,22 @@ export const getTemperatureInfo = (batchCode) =>
 
 export const logTemperatureReading = (batchCode, temp, by) =>
   request("/temperature/reading", { method: "POST", body: JSON.stringify({ batchCode, temp, by }) });
+
+// NEW: expired-batch reports. A Pharmacy rejects an expired batch (on-chain
+// markDelivered(id, false)) and attaches a comment; the Manufacturer and
+// earlier holders see it in their notifications. See server.js.
+export const submitExpiryReport = (batchCode, reportedBy, comment) =>
+  request("/expiry-report", { method: "POST", body: JSON.stringify({ batchCode, reportedBy, comment }) });
+
+export const listExpiryReports = () => request("/expiry-reports").catch(() => []);
+
+// NEW: Batch ID system. The on-chain `batchCode` of a new batch IS its Batch
+// ID (unique); the Product Code (which may repeat across batches) is saved
+// off-chain next to it. See server.js /batch-meta.
+export const saveBatchMeta = (batchId, productCode, manufacturer) =>
+  request("/batch-meta", { method: "POST", body: JSON.stringify({ batchId, productCode, manufacturer }) });
+
+export const getBatchMeta = (batchId) =>
+  request(`/batch-meta/${encodeURIComponent(batchId)}`).catch(() => null);
+
+export const listBatchMeta = () => request("/batch-metas").catch(() => []);

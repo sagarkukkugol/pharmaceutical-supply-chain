@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { uploadQRCodeToIPFS, getQRCodeFromIPFS } from "../api";
+import { uploadQRCodeToIPFS, getQRCodeFromIPFS, getBatchMeta } from "../api";
+import { isBatchIdFormat } from "../utils";
 
 // ============================================================
 // QRCodeBox
@@ -16,6 +17,8 @@ export default function QRCodeBox({ batchCode, compact = false }) {
   const [ipfsRecord, setIpfsRecord] = useState(null); // { cid, url } once saved (or previously saved)
   const [ipfsLoading, setIpfsLoading] = useState(false);
   const [ipfsMessage, setIpfsMessage] = useState("");
+  // Product Code of a NEW-style batch (used only for the download file name).
+  const [productCode, setProductCode] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -28,6 +31,13 @@ export default function QRCodeBox({ batchCode, compact = false }) {
     getQRCodeFromIPFS(batchCode).then((record) => {
       if (!cancelled && record) setIpfsRecord(record);
     });
+    if (isBatchIdFormat(batchCode)) {
+      getBatchMeta(batchCode).then((m) => {
+        if (!cancelled) setProductCode(m?.productCode || "");
+      });
+    } else {
+      Promise.resolve().then(() => !cancelled && setProductCode(""));
+    }
     return () => {
       cancelled = true;
     };
@@ -37,7 +47,8 @@ export default function QRCodeBox({ batchCode, compact = false }) {
     if (!dataUrl) return;
     const a = document.createElement("a");
     a.href = dataUrl;
-    a.download = `${batchCode}-qrcode.png`;
+    // New batches: <ProductCode>_<BatchID>.png   Older batches: unchanged.
+    a.download = isBatchIdFormat(batchCode) && productCode ? `${productCode}_${batchCode}.png` : `${batchCode}-qrcode.png`;
     a.click();
   };
 

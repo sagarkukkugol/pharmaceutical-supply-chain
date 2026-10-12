@@ -135,7 +135,7 @@ export function ActivityList({ items, onOpen, timeAgoFn, empty = "No activity ye
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="sc-activity-title">{n.title}</div>
             <div className="sc-activity-meta">
-              {n.displayId} · {n.productName} · Code: {n.batchCode}
+              {n.displayId} · {n.productName} · Code: {n.productCode ?? n.batchCode}
             </div>
             {n.detail && <div className="sc-activity-meta">{n.detail}</div>}
             <div className="sc-activity-time">{timeAgoFn(n.ts)}</div>

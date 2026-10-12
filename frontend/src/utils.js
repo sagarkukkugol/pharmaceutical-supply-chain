@@ -40,7 +40,7 @@ export function describeError(err) {
   if (raw.includes("not permitted to transfer")) return "This role is not permitted to transfer ownership. Use Mark Delivered instead.";
   if (raw.includes("only a pharmacy can update delivery")) return "Only a Pharmacy can update delivery status.";
   if (raw.includes("expiry date must be after")) return "Expiry date must be after the manufacture date.";
-  if (raw.includes("batch code already exists")) return "That batch code is already in use. Choose a unique batch code.";
+  if (raw.includes("batch code already exists")) return "That Batch ID was just taken by another registration. Please try again to get the next free Batch ID.";
   if (raw.includes("batch code cannot be empty")) return "Batch code cannot be empty.";
   if (raw.includes("batch does not exist")) return "That batch code / ID does not exist.";
   if (raw.includes("rating must be between")) return "Rating must be a whole number from 1 to 5.";
@@ -97,6 +97,35 @@ export function makeBatchId(manufacturerName, productCode, registeredUnix) {
   const get = (t) => parts.find((p) => p.type === t)?.value || "";
   return `${letters(manufacturerName, 3)}${letters(productCode, 2)}${get("day")}${get("month")}${get("year")}`;
 }
+
+// ------------------------------------------------------------
+// Batch ID  (MMM-PP-DDMMYYYY-XX)   e.g. LUP-HY-12102026-01
+// ------------------------------------------------------------
+// MMM = first 3 letters of the manufacturer name, PP = first 2 letters of
+// the Product Code, DDMMYYYY = manufacture date, XX = running number.
+// For NEW batches this value is stored on-chain in the contract's existing
+// unique `batchCode` field (that is what makes it impossible to duplicate),
+// while the Product Code is kept separately (see server.js /batch-meta).
+// Batches registered before this system keep using the Product Code in
+// that field and are recognised by NOT matching this pattern.
+const BATCH_ID_RE = /^[A-Z0-9]{1,3}-[A-Z0-9]{1,2}-\d{8}-\d{2,}$/;
+export const isBatchIdFormat = (code) => BATCH_ID_RE.test(String(code || "").trim());
+
+const cleanLetters = (s, n) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, n);
+
+// "LUP-HY-12102026-" — everything except the running number. Returns ""
+// until the manufacturer, product code and manufacture date are known.
+export function batchIdPrefix(manufacturerName, productCode, manufactureDate /* "YYYY-MM-DD" */) {
+  const m = cleanLetters(manufacturerName, 3);
+  const p = cleanLetters(productCode, 2);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(manufactureDate || "")
+    ? `${manufactureDate.slice(8, 10)}${manufactureDate.slice(5, 7)}${manufactureDate.slice(0, 4)}`
+    : "";
+  if (!m || !p || !d) return "";
+  return `${m}-${p}-${d}-`;
+}
+
+export const withSequence = (prefix, n) => `${prefix}${String(n).padStart(2, "0")}`;
 
 export function timeAgo(unixSeconds, now = Date.now()) {
   const diff = Math.max(0, Math.floor(now / 1000 - Number(unixSeconds)));

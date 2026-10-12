@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getReadOnlyContract, getProvider } from "../contract";
-import { getUserByAddress, getTemperatureInfo, rateBatch } from "../api";
+import { getUserByAddress, getTemperatureInfo, rateBatch, getBatchMeta } from "../api";
 import { INDIAN_CITIES } from "../cities";
 import BatchCodeInput from "./BatchCodeInput";
 import ViewQRButton from "./QRModal";
@@ -8,7 +8,7 @@ import MessageBox from "./MessageBox";
 import { BatchTimelineEvents } from "./BatchTimeline";
 import Icon, { IconCircle } from "../dashboard/icons";
 import { resolveBatchId } from "../resolveBatch";
-import { describeError, formatDateOnly, makeBatchId, batchDisplayId, DELIVERY_STATUS_LABELS } from "../utils";
+import { describeError, formatDateOnly, makeBatchId, batchDisplayId, isBatchIdFormat, DELIVERY_STATUS_LABELS } from "../utils";
 import { inputStyle, labelStyle, buttonStyle } from "../styles";
 
 // ============================================================
@@ -68,9 +68,14 @@ export default function MedicineVerifier({ initialCode = "", allowRating = true,
 
     const verified = {
       id: data.id.toString(),
-      displayId: manufacturerUser?.username
-        ? makeBatchId(manufacturerUser.username, data.batchCode, Number(data.createdAt))
-        : batchDisplayId(data.id),
+      displayId: isBatchIdFormat(data.batchCode)
+        ? data.batchCode
+        : manufacturerUser?.username
+          ? makeBatchId(manufacturerUser.username, data.batchCode, Number(data.createdAt))
+          : batchDisplayId(data.id),
+      // New batches store the Batch ID on-chain; the Product Code is kept
+      // off-chain. Older batches: the on-chain code IS the Product Code.
+      productCode: isBatchIdFormat(data.batchCode) ? (await getBatchMeta(data.batchCode))?.productCode || "—" : data.batchCode,
       batchCode: data.batchCode,
       productName: data.productName,
       quantity: Number(data.quantity),
@@ -192,7 +197,7 @@ export default function MedicineVerifier({ initialCode = "", allowRating = true,
         city: consumerCity.trim(),
         feedback: consumerFeedback.trim(),
       });
-      setRatingMessage({ type: "success", text: "Thanks - your rating and feedback have been recorded." });
+      setRatingMessage({ type: "success", text: "Thanks — your rating and feedback have been recorded." });
       setHasRated(true);
       await loadEverything(batch.batchCode);
     } catch (err) {
@@ -239,10 +244,10 @@ export default function MedicineVerifier({ initialCode = "", allowRating = true,
           <div className={`sc-verdict ${batch.isExpired ? "sc-verdict--bad" : "sc-verdict--ok"}`} role="status">
             <Icon name={batch.isExpired ? "alert" : "shield"} size={30} />
             <div>
-              <strong>{batch.isExpired ? "Authentic batch — but EXPIRED" : "Authentic - verified on the blockchain"}</strong>
+              <strong>{batch.isExpired ? "Authentic batch — but EXPIRED" : "Authentic — verified on the blockchain"}</strong>
               {batch.isExpired
-                ? `This batch expired on ${formatDateOnly(batch.expiryDate)}. Do not use - return it to where you bought it.`
-                : `Safe to use - valid for ${batch.daysRemaining} more day${batch.daysRemaining === 1 ? "" : "s"}, until ${formatDateOnly(batch.expiryDate)}.`}
+                ? `This batch expired on ${formatDateOnly(batch.expiryDate)}. Do not use — return it to where you bought it.`
+                : `Safe to use — valid for ${batch.daysRemaining} more day${batch.daysRemaining === 1 ? "" : "s"}, until ${formatDateOnly(batch.expiryDate)}.`}
             </div>
           </div>
 
@@ -253,7 +258,7 @@ export default function MedicineVerifier({ initialCode = "", allowRating = true,
             </div>
             <dl className="sc-info-grid" style={{ margin: 0 }}>
               <div><dt>Product Name</dt><dd>{batch.productName}</dd></div>
-              <div><dt>Product Code</dt><dd>{batch.batchCode}</dd></div>
+              <div><dt>Product Code</dt><dd>{batch.productCode}</dd></div>
               <div><dt>Batch ID</dt><dd>{batch.displayId}</dd></div>
               <div><dt>Manufacturer</dt><dd>{batch.manufacturerName ? `${batch.manufacturerName}${batch.manufacturerCity ? `, ${batch.manufacturerCity}` : ""}` : "—"}</dd></div>
               <div><dt>Manufacture Date</dt><dd>{formatDateOnly(batch.manufactureDate)}</dd></div>
@@ -307,7 +312,7 @@ export default function MedicineVerifier({ initialCode = "", allowRating = true,
               </div>
               {batch.deliveryStatus !== 1 ? (
                 <p style={{ color: "#b45309" }}>
-                  Rating and feedback aren't available yet - they open up once the pharmacy marks this batch as delivered.
+                  Rating and feedback aren't available yet — they open up once the pharmacy marks this batch as delivered.
                 </p>
               ) : (
                 <>

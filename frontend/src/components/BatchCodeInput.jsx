@@ -134,9 +134,21 @@ export default function BatchCodeInput({ value, onChange, onDecoded, placeholder
   );
 }
 
+// Set to true to print the camera/video state in the browser console while
+// diagnosing a camera problem (permission result, camera used, stream and
+// <video> state, frames received).
+const DEBUG_SCANNER = false;
+const dbg = (...args) => DEBUG_SCANNER && console.debug("[QR scanner]", ...args);
+let scannerSeq = 0;
+// html5-qrcode keeps one fixed, document-wide element id for its overlay, so
+// two scanner instances must never exist at the same time. Each scanner waits
+// for the previous one to be completely stopped before it starts.
+let cameraQueue = Promise.resolve();
+
+const isPermissionError = (err) => /NotAllowed|Permission|denied/i.test(`${err?.name || ""} ${err?.message || err}`);
+
 function QRScannerModal({ onDetected, onClose }) {
-  const containerId = "qr-scanner-region";
-  const scannerRef = useRef(null);
+  const hostRef = useRef(null);
   const [error, setError] = useState("");
   // Keep the latest callback in a ref so a parent re-render never tears
   // down and restarts the camera mid-scan.
@@ -146,41 +158,135 @@ function QRScannerModal({ onDetected, onClose }) {
   });
 
   useEffect(() => {
-    const scanner = new Html5Qrcode(containerId);
-    scannerRef.current = scanner;
-    let stopped = false;
+    const host = hostRef.current;
+    if (!host) return undefined;
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 220, height: 220 } },
-        (decodedText) => {
-          if (stopped) return;
-          stopped = true;
-          scanner
-            .stop()
-            .then(() => scanner.clear())
-            .catch(() => {})
-            .finally(() => onDetectedRef.current(decodedText));
-        },
-        // per-frame "nothing found yet" callback — intentionally ignored,
-        // it fires continuously while scanning and isn't an error.
-        () => {}
-      )
-      .catch((err) => {
-        setError(
-          "Unable to access camera. Please use file upload or enter the batch code manually."
-        );
-        console.error(err);
-      });
+    // WHY A FRESH ELEMENT + SCANNER PER START: in development React
+    // (StrictMode) mounts, immediately unmounts and re-mounts this effect.
+    // html5-qrcode starts the camera asynchronously, and calling stop()
+    // before it has finished starting throws "Cannot stop, scanner is not
+    // running or paused" (which crashed this component) and leaves the
+    // first stream running next to the second one — the black/blank video.
+    // So every start gets its own element + scanner instance, and stop /
+    // cleanup only ever happens AFTER that instance has finished starting.
+    const ready = cameraQueue; // the previous scanner has fully stopped when this settles
+    let done = () => {};
+    cameraQueue = new Promise((resolve) => {
+      done = resolve;
+    });
+    let current = null; // { scanner, region } of the instance holding the camera
+    let cancelled = false; // effect was cleaned up (closed / unmounted)
+    let finished = false; // a QR was already accepted
+    let released = false;
+    let frames = 0;
+    let watchdog = null;
+
+    const discard = (inst) => {
+      try {
+        inst.scanner.clear();
+      } catch {
+        // nothing to tidy up
+      }
+      inst.region.remove();
+    };
+
+    // Stops every camera track exactly once, then removes the element.
+    const release = async () => {
+      if (released) return;
+      released = true;
+      clearTimeout(watchdog);
+      try {
+        if (current) {
+          try {
+            const state = current.scanner.getState?.();
+            if (state === 2 /* SCANNING */ || state === 3 /* PAUSED */) await current.scanner.stop();
+          } catch (e) {
+            console.error("QR scanner: stop failed", e);
+          }
+          discard(current);
+          dbg("released camera");
+        }
+      } finally {
+        done(); // let the next scanner (if any) start now
+      }
+    };
+
+    const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+    const onScan = (decodedText) => {
+      if (finished || cancelled) return;
+      finished = true;
+      dbg("QR detected:", decodedText);
+      release().finally(() => onDetectedRef.current(decodedText));
+    };
+    // fires for every processed frame that holds no QR yet — not an error.
+    const onFrame = () => {
+      frames += 1;
+    };
+
+    // One attempt = one new element + scanner. A failed attempt is thrown
+    // away completely (html5-qrcode can be left mid-transition after a
+    // failed start, so it must not be reused).
+    const startOn = async (cameraIdOrConfig) => {
+      const region = document.createElement("div");
+      region.id = `qr-scanner-region-${++scannerSeq}`;
+      host.appendChild(region);
+      const inst = { scanner: new Html5Qrcode(region.id, /* verbose= */ false), region };
+      try {
+        await inst.scanner.start(cameraIdOrConfig, config, onScan, onFrame);
+      } catch (e) {
+        discard(inst);
+        throw e;
+      }
+      current = inst;
+    };
+
+    const startPromise = (async () => {
+      await ready;
+      if (cancelled) return; // closed/re-mounted before the camera was even asked for
+      try {
+        // Prefer the rear camera ("environment" is a preference, not a
+        // requirement), but never fail just because there isn't one.
+        await startOn({ facingMode: "environment" });
+        dbg("started with facingMode=environment");
+      } catch (firstErr) {
+        if (cancelled || isPermissionError(firstErr)) throw firstErr;
+        console.warn("QR scanner: environment camera unavailable, trying any camera", firstErr);
+        const cameras = await Html5Qrcode.getCameras();
+        dbg("available cameras:", cameras);
+        if (!cameras.length) throw firstErr;
+        await startOn(cameras[0].id);
+      }
+      if (cancelled) {
+        await release();
+        return;
+      }
+      const video = current.region.querySelector("video");
+      dbg("permission granted; stream:", video?.srcObject, "active:", video?.srcObject?.active);
+      // If the picture never arrives, say so instead of leaving a black box.
+      watchdog = setTimeout(() => {
+        if (cancelled || finished) return;
+        const v = current?.region.querySelector("video");
+        dbg("readyState", v?.readyState, "size", v?.videoWidth, "x", v?.videoHeight, "frames", frames);
+        if (v && !v.videoWidth) v.play?.().catch(() => {});
+        if (!v || !v.videoWidth) {
+          setError("Unable to start the camera. Please close other apps using the camera and try again.");
+        }
+      }, 4000);
+    })().catch(async (err) => {
+      console.error("QR scanner: camera start failed", err);
+      await release();
+      if (cancelled) return;
+      setError(
+        isPermissionError(err)
+          ? "Camera permission was denied. Allow camera access for this site in your browser settings, or use Upload QR / type the Batch ID instead."
+          : "Unable to start the camera. Please close other apps using the camera and try again."
+      );
+    });
 
     return () => {
-      if (!stopped) {
-        scanner
-          .stop()
-          .then(() => scanner.clear())
-          .catch(() => {});
-      }
+      cancelled = true;
+      // Wait for a pending start to settle, then stop the stream.
+      startPromise.finally(() => release());
     };
   }, []);
 
@@ -188,7 +294,7 @@ function QRScannerModal({ onDetected, onClose }) {
     <div style={overlayStyle}>
       <div style={boxStyle}>
         <h3 style={{ marginTop: 0, color: "#1d4ed8" }}>Scan QR Code</h3>
-        <div id={containerId} style={{ width: "260px", margin: "0 auto" }} />
+        <div ref={hostRef} style={{ width: "260px", margin: "0 auto" }} />
         {error && <p style={{ color: "#b91c1c", fontSize: "13px", marginTop: "10px" }}>{error}</p>}
         <button style={cancelButtonStyle} onClick={onClose}>
           Cancel

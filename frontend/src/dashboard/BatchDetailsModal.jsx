@@ -13,7 +13,7 @@ export default function BatchDetailsModal({ batch, onClose }) {
   const rows = [
     ["Batch ID", batch.displayId],
     ["Product ID", batch.id],
-    ["Product Code", batch.batchCode],
+    ["Product Code", batch.productCode ?? batch.batchCode],
     ["Product Name", batch.productName],
     ["Quantity", batch.quantity.toLocaleString()],
     ["Manufacturer", batch.manufacturerName || "—"],
@@ -24,6 +24,9 @@ export default function BatchDetailsModal({ batch, onClose }) {
     ["Delivery Status", batch.deliveryLabel],
     ["Last Action", batch.lastAction || "—"],
     ["Current Owner", owner],
+    ...(batch.expiryReport
+      ? [["Expiry Report", `${batch.expiryReport.reportedBy} (Pharmacy): "${batch.expiryReport.comment}"`]]
+      : []),
     ["Rating", batch.avgRating !== null ? `${batch.avgRating.toFixed(1)} / 5 (${batch.ratingCount})` : "No ratings yet"],
     ["QR Code", `Encodes ${batch.batchCode}`],
   ];

@@ -1,0 +1,23 @@
+{
+  "hydro_1000": {
+    "batchCode": "hydro_1000",
+    "reportedBy": "prasad",
+    "role": "Pharmacy",
+    "comment": "this product expired so i want to take more product of this batch so manufacture more product and delevre ASAP",
+    "reportedAt": "2026-10-11T21:20:55.906Z"
+  },
+  "hydro_500": {
+    "batchCode": "hydro_500",
+    "reportedBy": "rajat",
+    "role": "Pharmacy",
+    "comment": "expeired product we dont need this tablet.",
+    "reportedAt": "2026-10-12T06:43:06.674Z"
+  },
+  "cold_800": {
+    "batchCode": "cold_800",
+    "reportedBy": "rajat",
+    "role": "Pharmacy",
+    "comment": "product are expired so deliver more this product ASAP",
+    "reportedAt": "2026-10-12T06:43:51.275Z"
+  }
+}

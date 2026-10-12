@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getReadOnlyContract, getProvider } from "../contract";
-import { getUserByAddress, getTemperatureInfo } from "../api";
-import { batchDisplayId, makeBatchId, DELIVERY_STATUS_LABELS } from "../utils";
+import { getUserByAddress, getTemperatureInfo, listExpiryReports, listBatchMeta } from "../api";
+import { batchDisplayId, makeBatchId, isBatchIdFormat, DELIVERY_STATUS_LABELS } from "../utils";
 
 // ============================================================
 // useChainData
@@ -93,6 +93,10 @@ export async function fetchChainData() {
   const user = (a) => userCache.get((a || "").toLowerCase()) || null;
 
   const temps = await Promise.all(rawBatches.map((b) => getTemperatureInfo(b.batchCode)));
+  const reportList = await listExpiryReports();
+  const metaList = await listBatchMeta();
+  const productCodeById = new Map((metaList || []).map((m) => [m.batchId, m.productCode]));
+  const reportByCode = new Map((reportList || []).map((r) => [r.batchCode, r]));
 
   const now = Date.now() / 1000;
   const batches = rawBatches.map((b, i) => {
@@ -108,9 +112,15 @@ export async function fetchChainData() {
     const deliveryStatus = Number(b.deliveryStatus);
     return {
       id,
-      displayId: manufacturerUser?.username
-        ? makeBatchId(manufacturerUser.username, b.batchCode, registeredEv?.timestamp || Number(b.createdAt))
-        : batchDisplayId(id),
+      // New batches: the on-chain batchCode IS the Batch ID and the Product
+      // Code comes from /batch-meta. Older batches: batchCode is the Product
+      // Code and the Batch ID is derived exactly as before.
+      displayId: isBatchIdFormat(b.batchCode)
+        ? b.batchCode
+        : manufacturerUser?.username
+          ? makeBatchId(manufacturerUser.username, b.batchCode, registeredEv?.timestamp || Number(b.createdAt))
+          : batchDisplayId(id),
+      productCode: isBatchIdFormat(b.batchCode) ? productCodeById.get(b.batchCode) || "—" : b.batchCode,
       batchCode: b.batchCode,
       productName: b.productName,
       quantity: Number(b.quantity),
@@ -132,6 +142,7 @@ export async function fetchChainData() {
       avgRating: ratingCount > 0 ? Number(b.ratingSum) / ratingCount : null,
       temp: temp ? { min: temp.min, max: temp.max, readings: temp.readings || [] } : null,
       tempText: temp ? `${temp.min}°C – ${temp.max}°C` : "—",
+      expiryReport: deliveryStatus === 2 ? reportByCode.get(b.batchCode) || null : null,
       events: evs,
       transfers,
       lastEvent: evs[evs.length - 1] || null,

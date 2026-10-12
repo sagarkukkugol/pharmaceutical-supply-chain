@@ -205,6 +205,28 @@ function saveTemps(temps) {
   fs.writeFileSync(TEMPS_FILE, JSON.stringify(temps, null, 2));
 }
 
+// NEW: expired-batch reports from a Pharmacy (expiry-reports.json).
+const EXPIRY_FILE = path.join(__dirname, "expiry-reports.json");
+function loadExpiryReports() {
+  if (!fs.existsSync(EXPIRY_FILE)) return {};
+  const raw = fs.readFileSync(EXPIRY_FILE, "utf8").trim();
+  return raw ? JSON.parse(raw) : {};
+}
+function saveExpiryReports(reports) {
+  fs.writeFileSync(EXPIRY_FILE, JSON.stringify(reports, null, 2));
+}
+
+// NEW: Batch ID system — Product Code per Batch ID (batch-meta.json).
+const BATCHMETA_FILE = path.join(__dirname, "batch-meta.json");
+function loadBatchMeta() {
+  if (!fs.existsSync(BATCHMETA_FILE)) return {};
+  const raw = fs.readFileSync(BATCHMETA_FILE, "utf8").trim();
+  return raw ? JSON.parse(raw) : {};
+}
+function saveBatchMeta(meta) {
+  fs.writeFileSync(BATCHMETA_FILE, JSON.stringify(meta, null, 2));
+}
+
 // Passwords are hashed with Node's built-in scrypt (no extra dependency
 // needed) — never stored in plain text, even locally.
 function hashPassword(password) {
@@ -425,7 +447,7 @@ app.post("/login", (req, res) => {
     const { role: requestedRole } = req.body;
     if (requestedRole && requestedRole !== user.role) {
       return res.status(403).json({
-        error: `This account is not registered as ${requestedRole}.`,
+        error: `This account is registered as ${user.role}, not ${requestedRole}.`,
       });
     }
 
@@ -888,6 +910,100 @@ app.post("/temperature/reading", (req, res) => {
   } catch (err) {
     console.error("Temperature reading error:", err);
     return res.status(500).json({ error: "Could not log the temperature reading." });
+  }
+});
+
+// ============================================================
+// Batch ID system: Product Code per Batch ID (off-chain)
+// ============================================================
+// For a NEW batch the contract's unique `batchCode` field holds the
+// generated Batch ID (MMM-PP-DDMMYYYY-XX), so the blockchain itself
+// guarantees no two batches share a Batch ID. The contract has no separate
+// field for the Product Code (which is allowed to repeat), so it is kept
+// here: batch-meta.json maps batchId -> { batchId, productCode, manufacturer,
+// savedAt }. Batches registered before this system are simply absent from
+// this file and keep working with their Product Code as before.
+app.post("/batch-meta", (req, res) => {
+  try {
+    const { batchId, productCode, manufacturer } = req.body;
+    const id = String(batchId || "").trim();
+    const code = String(productCode || "").trim();
+    if (!id) return res.status(400).json({ error: "batchId is required." });
+    if (!code) return res.status(400).json({ error: "productCode is required." });
+    const meta = loadBatchMeta();
+    meta[id] = {
+      batchId: id,
+      productCode: code.slice(0, 80),
+      manufacturer: String(manufacturer || "").slice(0, 80),
+      savedAt: new Date().toISOString(),
+    };
+    saveBatchMeta(meta);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Batch meta error:", err);
+    return res.status(500).json({ error: "Could not save the product code." });
+  }
+});
+
+app.get("/batch-meta/:batchId", (req, res) => {
+  const record = loadBatchMeta()[req.params.batchId];
+  if (!record) return res.status(404).json({ error: "No product code on file for that Batch ID." });
+  return res.json(record);
+});
+
+app.get("/batch-metas", (req, res) => {
+  try {
+    return res.json(Object.values(loadBatchMeta()));
+  } catch {
+    return res.json([]);
+  }
+});
+
+// ============================================================
+// Expired-batch reports (off-chain comment, on-chain "Not Delivered")
+// ============================================================
+// When an expired batch reaches a Pharmacy, the Pharmacy rejects it:
+// the frontend calls the EXISTING contract function markDelivered(id,
+// false) through MetaMask (so the rejection is a permanent on-chain
+// "Not Delivered" record, no contract change) and then posts the
+// pharmacy's written comment here. The comment is off-chain for the same
+// reason the temperature range is (see above): free text doesn't belong
+// in contract storage. expiry-reports.json maps batchCode ->
+// { batchCode, reportedBy, role, comment, reportedAt }.
+app.post("/expiry-report", (req, res) => {
+  try {
+    const { batchCode, reportedBy, comment } = req.body;
+    if (!batchCode || !String(batchCode).trim()) {
+      return res.status(400).json({ error: "batchCode is required." });
+    }
+    const text = String(comment || "").trim();
+    if (text.length < 5) {
+      return res.status(400).json({ error: "Please write a short comment (at least 5 characters)." });
+    }
+    if (text.length > 500) {
+      return res.status(400).json({ error: "Comment is too long (500 characters max)." });
+    }
+    const reports = loadExpiryReports();
+    reports[String(batchCode).trim()] = {
+      batchCode: String(batchCode).trim(),
+      reportedBy: String(reportedBy || "Pharmacy").slice(0, 80),
+      role: "Pharmacy",
+      comment: text,
+      reportedAt: new Date().toISOString(),
+    };
+    saveExpiryReports(reports);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Expiry report error:", err);
+    return res.status(500).json({ error: "Could not save the expiry report." });
+  }
+});
+
+app.get("/expiry-reports", (req, res) => {
+  try {
+    return res.json(Object.values(loadExpiryReports()));
+  } catch {
+    return res.json([]);
   }
 });
 
